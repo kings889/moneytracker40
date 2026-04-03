@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Money Tracker</title>
+
+<link rel="manifest" href="manifest.json">
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+<style>
+body{margin:0;font-family:sans-serif;background:#f2f2f2}
+.center{display:flex;justify-content:center;align-items:center;height:100vh}
+.box{width:90%;max-width:350px;background:#fff;padding:20px;border-radius:12px}
+.hidden{display:none}
+
+input,select,button{
+width:100%;padding:10px;margin:6px 0;border-radius:8px;border:1px solid #ccc
+}
+button{background:#ff4d4d;color:#fff;border:none}
+
+header{background:#ff4d4d;color:#fff;padding:20px;border-radius:0 0 20px 20px}
+.summary{display:flex;justify-content:space-between}
+.card{background:#fff;margin:10px;padding:12px;border-radius:12px}
+
+.fab{
+position:fixed;bottom:80px;right:20px;
+width:55px;height:55px;border-radius:50%;
+border:none;background:#ff4d4d;color:#fff;font-size:26px
+}
+
+nav{
+position:fixed;bottom:0;width:100%;
+background:#fff;display:flex;justify-content:space-around;
+padding:12px 0;border-top:1px solid #ddd
+}
+
+.income{color:green}
+.expense{color:red}
+
+.delete{background:red;color:#fff;border:none;border-radius:6px;padding:4px 8px}
+.edit{background:#ffa500;color:#fff;border:none;border-radius:6px;padding:4px 8px}
+
+#modal{
+position:fixed;top:20%;left:10%;right:10%;
+background:#fff;padding:15px;border-radius:15px;
+box-shadow:0 5px 15px rgba(0,0,0,.3)
+}
+</style>
+</head>
+
+<body>
+
+<!-- LOGIN -->
+<div id="loginPage" class="center">
+<div class="box">
+<h3>Money Tracker</h3>
+<input id="loginEmail" placeholder="Email">
+<input id="loginPass" type="password" placeholder="Password">
+<button onclick="login()">Login</button>
+<p style="text-align:center"><a onclick="showRegister()">Daftar</a></p>
+</div>
+</div>
+
+<!-- REGISTER -->
+<div id="registerPage" class="center hidden">
+<div class="box">
+<h3>Daftar Akun</h3>
+<input id="regName" placeholder="Nama">
+<input id="regEmail" placeholder="Email">
+<input id="regPass" type="password" placeholder="Password">
+<button onclick="register()">Daftar</button>
+<p style="text-align:center"><a onclick="showLogin()">Login</a></p>
+</div>
+</div>
+
+<!-- APP -->
+<div id="appPage" class="hidden">
+
+<header>
+<h2 id="username">Money Tracker</h2>
+
+<select id="filter" onchange="render()" style="margin-top:10px">
+<option value="all">Semua</option>
+<option value="income">Masuk</option>
+<option value="expense">Keluar</option>
+</select>
+
+Saldo: Rp <b id="balance">0</b>
+<div class="summary">
+<div>Masuk<br><b id="income">0</b></div>
+<div>Keluar<br><b id="expense">0</b></div>
+</div>
+</header>
+
+<div id="home"></div>
+
+<div id="stats" class="hidden card">
+<canvas id="chartCanvas"></canvas>
+</div>
+
+<div id="profile" class="hidden card">
+Batas Pengeluaran:
+<input type="number" id="limitInput">
+<button onclick="saveLimit()">Simpan</button>
+<button onclick="logout()" style="background:red">Logout</button>
+</div>
+
+<button class="fab" onclick="openModal()">+</button>
+
+<nav>
+<div onclick="showPage('home')">Home</div>
+<div onclick="showPage('stats')">Stats</div>
+<div onclick="showPage('profile')">Profile</div>
+</nav>
+
+<div id="modal" class="hidden">
+<h3>Transaksi</h3>
+<input type="date" id="dateInput">
+<input type="number" id="amountInput" placeholder="Jumlah">
+
+<select id="typeInput">
+<option value="income">💰 Pemasukan</option>
+<option value="expense">💸 Pengeluaran</option>
+</select>
+
+<select id="catInput">
+<option value="makan">🍔 Makanan</option>
+<option value="transport">🚗 Transport</option>
+<option value="gaji">💼 Gaji</option>
+<option value="belanja">🛍️ Belanja</option>
+<option value="lain">💰 Lainnya</option>
+</select>
+
+<button onclick="addTrx()">Simpan</button>
+<button onclick="closeModal()">Batal</button>
+</div>
+
+</div>
+
+<script>
+// REGISTER SERVICE WORKER (WAJIB PWA)
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js');
+}
+
+// AUTO CREATE MANIFEST (BIAR SIMPLE)
+const manifest = {
+  name: "Money Tracker",
+  short_name: "Money",
+  start_url: ".",
+  display: "standalone",
+  background_color: "#ffffff",
+  theme_color: "#ff4d4d",
+  icons: [
+    {
+      src: "icon.png",
+      sizes: "512x512",
+      type: "image/png"
+    }
+  ]
+};
+
+const blob = new Blob([JSON.stringify(manifest)], {type: 'application/json'});
+const manifestURL = URL.createObjectURL(blob);
+document.querySelector('link[rel="manifest"]').setAttribute('href', manifestURL);
+
+// ================= APP CODE =================
+let currentUser=null;
+let chart=null;
+let editIndex=null;
+
+function showRegister(){loginPage.classList.add("hidden");registerPage.classList.remove("hidden")}
+function showLogin(){registerPage.classList.add("hidden");loginPage.classList.remove("hidden")}
+
+function register(){
+let users=JSON.parse(localStorage.getItem("users")||"[]");
+let user={name:regName.value,email:regEmail.value,pass:regPass.value};
+if(users.find(u=>u.email===user.email)) return Swal.fire("Email sudah ada");
+users.push(user);
+localStorage.setItem("users",JSON.stringify(users));
+Swal.fire("Berhasil daftar");
+showLogin();
+}
+
+function login(){
+let users=JSON.parse(localStorage.getItem("users")||"[]");
+let user=users.find(u=>u.email===loginEmail.value && u.pass===loginPass.value);
+if(!user) return Swal.fire("Login gagal");
+currentUser=user.email;
+localStorage.setItem("session",currentUser);
+startApp(user);
+}
+
+function logout(){localStorage.removeItem("session");location.reload()}
+
+function startApp(user){
+loginPage.classList.add("hidden");
+registerPage.classList.add("hidden");
+appPage.classList.remove("hidden");
+username.innerText="💰 Money Tracker - "+user.name;
+render();
+}
+
+function getData(){return JSON.parse(localStorage.getItem("trx_"+currentUser)||"[]")}
+function saveData(d){localStorage.setItem("trx_"+currentUser,JSON.stringify(d))}
+
+function openModal(){modal.classList.remove("hidden")}
+function closeModal(){modal.classList.add("hidden");editIndex=null}
+
+function addTrx(){
+let data=getData();
+let t={
+date:dateInput.value,
+amount:+amountInput.value,
+type:typeInput.value,
+cat:catInput.value
+};
+
+if(!t.date||!t.amount) return Swal.fire("Isi semua!");
+
+if(editIndex!==null){
+data[editIndex]=t;
+editIndex=null;
+}else{
+data.push(t);
+}
+
+saveData(data);
+Swal.fire("Tersimpan","","success");
+closeModal();
+render();
+}
+
+function delTrx(i){
+let data=getData();
+data.splice(i,1);
+saveData(data);
+render();
+}
+
+function render(){
+let data=getData();
+let home=document.getElementById("home");
+
+let inc=0,exp=0;
+home.innerHTML="";
+
+data.forEach((t,i)=>{
+if(t.type==="income") inc+=t.amount;
+else exp+=t.amount;
+
+home.innerHTML+=`
+<div class="card">
+<button class="delete" onclick="delTrx(${i})">Hapus</button>
+<b>${t.cat}</b><br>${t.date}<br>
+<span class="${t.type}">Rp ${t.amount}</span>
+</div>`;
+});
+
+balance.innerText=inc-exp;
+income.innerText=inc;
+expense.innerText=exp;
+
+if(chart) chart.destroy();
+chart=new Chart(chartCanvas,{
+type:"bar",
+data:{labels:["Masuk","Keluar"],datasets:[{data:[inc,exp]}]}
+});
+}
+
+function showPage(p){
+["home","stats","profile"].forEach(id=>{
+document.getElementById(id).classList.add("hidden");
+});
+document.getElementById(p).classList.remove("hidden");
+}
+
+window.onload=()=>{
+let s=localStorage.getItem("session");
+if(s){
+currentUser=s;
+let users=JSON.parse(localStorage.getItem("users")||"[]");
+let user=users.find(u=>u.email===s);
+startApp(user);
+}
+};
+</script>
+
+</body>
+</html>
