@@ -1,10 +1,11 @@
 {
   "name": "Money Tracker",
   "short_name": "Tracker",
-  "start_url": ".",
+  "description": "Aplikasi pencatat keuangan sederhana",
+  "start_url": "/moneytracker40/",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#ff4d4d",
+  "theme_color": "#4CAF50",
   "icons": [
     {
       "src": "icon.png",
